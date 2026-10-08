@@ -1,0 +1,367 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  USER
+  CREATOR
+  MODERATOR
+  ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+}
+
+enum VideoStatus {
+  UPLOADING
+  PROCESSING
+  READY
+  FAILED
+  REMOVED
+}
+
+enum Visibility {
+  PUBLIC
+  FOLLOWERS
+  PRIVATE
+}
+
+model User {
+  id              String         @id @default(uuid())
+  email           String         @unique
+  username        String         @unique
+  passwordHash    String
+  role            Role           @default(USER)
+  status          AccountStatus  @default(ACTIVE)
+  phone           String?        @unique
+  phoneVerified   Boolean        @default(false)
+  primaryProvider String         @default("email")
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  profile       Profile?
+  videos        Video[]
+  comments      Comment[]
+  likes         Like[]
+  views         View[]
+  shares        Share[]
+  savedVideos   SavedVideo[]
+  notifications Notification[] @relation("UserNotifications")
+  reportsFiled  Report[]       @relation("ReportReporter")
+  reportsAgainst Report[]      @relation("ReportTargetUser")
+  sessions      Session[]
+
+  // Social graph
+  followers     Follow[]       @relation("UserFollowers")
+  following     Follow[]       @relation("UserFollowing")
+
+  // Linked auth identities (google / facebook / phone)
+  accounts      Account[]
+
+  // Coin economy (server-authoritative; devices cache + queue offline earns)
+  wallet        CoinWallet?
+  coinLedger    CoinLedger[]
+
+  @@index([email])
+  @@index([username])
+}
+
+model CoinWallet {
+  userId    String   @id
+  balance   Int      @default(0)
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model CoinLedger {
+  id        String   @id @default(cuid())
+  userId    String
+  amount    Int
+  reason    String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model Profile {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  displayName String
+  bio         String?  @default("")
+  avatarUrl   String?
+  bannerUrl   String?
+  isVerified  Boolean  @default(false)
+  isPrivate   Boolean  @default(false)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  followersCount Int   @default(0)
+  followingCount Int   @default(0)
+  likesReceived  Int   @default(0)
+
+  updatedAt   DateTime @updatedAt
+}
+
+model Video {
+  id            String       @id @default(uuid())
+  userId        String
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  caption       String
+  originalKey   String       // Object storage key for raw video
+  streamUrl     String?      // Master video stream playback URL (CDN or direct object storage)
+  streamUid      String?      // External processing UID if transcoder is configured
+  thumbnailUrl  String?      // CDN URL for video cover
+  status        VideoStatus  @default(PROCESSING)
+  visibility    Visibility   @default(PUBLIC)
+
+  durationSec   Float        @default(0)
+  aspectRatio   String       @default("9:16")
+
+  musicTitle    String?      @default("Original Sound")
+  musicArtist   String?
+
+  viewsCount    Int          @default(0)
+  likesCount    Int          @default(0)
+  commentsCount Int          @default(0)
+  sharesCount   Int          @default(0)
+
+  metadata      VideoMetadata?
+  comments      Comment[]
+  likes         Like[]
+  views         View[]
+  shares        Share[]
+  savedIn       SavedVideo[]
+  reports       Report[]
+  hashtags      VideoHashtag[]
+
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([userId])
+  @@index([status, visibility, createdAt])
+  @@index([viewsCount, likesCount])
+}
+
+model VideoMetadata {
+  id          String   @id @default(uuid())
+  videoId     String   @unique
+  video       Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  codec       String?
+  container   String?
+  width       Int?
+  height      Int?
+  bitrate     Int?
+  fps         Float?
+
+  hls360pUrl  String?
+  hls480pUrl  String?
+  hls720pUrl  String?
+  hls1080pUrl String?
+
+  processingTimeMs Int?
+  createdAt   DateTime @default(now())
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  videoId   String
+  video     Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  content   String
+  parentId  String?  // For nested replies
+  createdAt DateTime @default(now())
+
+  @@index([videoId, createdAt])
+}
+
+model Like {
+  id        String   @id @default(uuid())
+  videoId   String
+  video     Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([videoId, userId])
+  @@index([userId])
+}
+
+model Follow {
+  id          String   @id @default(uuid())
+  followerId  String
+  followingId String
+
+  follower    User     @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+  following   User     @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+
+  @@unique([followerId, followingId])
+  @@index([followerId])
+  @@index([followingId])
+  @@index([followerId, createdAt])
+  @@index([followingId, createdAt])
+}
+
+model View {
+  id          String   @id @default(uuid())
+  videoId     String
+  video       Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  watchSec    Float
+  completed   Boolean  @default(false)
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  @@index([videoId, createdAt])
+  @@index([userId, createdAt])
+}
+
+// Durable watch history for licensed seed clips (pex_*/cov_*). No FK by
+// design: external ids are not rows in Video, and history writes must never
+// fail. Powers Feed Engine exclusion for logged-in viewers.
+model ExternalSeen {
+  id         String   @id @default(uuid())
+  userId     String
+  externalId String
+  provider   String   @default("")
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, externalId])
+  @@index([userId, createdAt])
+}
+
+model Share {
+  id        String   @id @default(uuid())
+  videoId   String
+  video     Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform  String   @default("direct")
+  createdAt DateTime @default(now())
+}
+
+model SavedVideo {
+  id        String   @id @default(uuid())
+  videoId   String
+  video     Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([videoId, userId])
+}
+
+model Hashtag {
+  id         String         @id @default(uuid())
+  tag        String         @unique
+  videos     VideoHashtag[]
+  createdAt  DateTime       @default(now())
+
+  @@index([tag])
+}
+
+model VideoHashtag {
+  videoId   String
+  hashtagId String
+
+  video     Video   @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  hashtag   Hashtag @relation(fields: [hashtagId], references: [id], onDelete: Cascade)
+
+  @@id([videoId, hashtagId])
+}
+
+model Notification {
+  id          String   @id @default(uuid())
+  recipientId String
+  recipient   User     @relation("UserNotifications", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  actorId     String
+  type        String   // "like", "comment", "follow", "system"
+  message     String
+  referenceId String?
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([recipientId, isRead])
+  @@index([recipientId, createdAt])
+}
+
+model Report {
+  id          String   @id @default(uuid())
+  reporterId  String
+  reporter    User     @relation("ReportReporter", fields: [reporterId], references: [id], onDelete: Cascade)
+
+  targetUserId String?
+  targetUser   User?   @relation("ReportTargetUser", fields: [targetUserId], references: [id], onDelete: SetNull)
+
+  videoId     String?
+  video       Video?   @relation(fields: [videoId], references: [id], onDelete: SetNull)
+
+  reason      String
+  status      String   @default("PENDING") // PENDING, RESOLVED, DISMISSED
+  createdAt   DateTime @default(now())
+
+  @@index([status])
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  userAgent String?
+  ipAddress String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([token])
+}
+
+// One row per linked identity: the same human keeps ONE User row no matter
+// how many ways they sign in (google / facebook / phone).
+model Account {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider   String
+  providerId String
+  email      String?
+  createdAt  DateTime @default(now())
+
+  @@unique([provider, providerId])
+  @@index([userId])
+}
+
+// Phone OTP challenges. Codes are stored HASHED (HMAC + salt), expire fast,
+// and are deleted on success/expiry. One active challenge per phone+purpose.
+model PhoneOtp {
+  id          String   @id @default(uuid())
+  phone       String
+  purpose     String   @default("register")
+  codeHash    String
+  salt        String
+  expiresAt   DateTime
+  attempts    Int      @default(0)
+  maxAttempts Int      @default(5)
+  sendCount   Int      @default(1)
+  lastSentAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@unique([phone, purpose])
+  @@index([phone])
+}

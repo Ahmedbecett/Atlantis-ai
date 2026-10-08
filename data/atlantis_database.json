@@ -1,0 +1,220 @@
+{
+  "users": [
+    {
+      "id": "2808d914-6a74-4ca5-9b9d-ee752e60359e",
+      "email": "demo_engineer@atlantis.ai",
+      "username": "demoengineer",
+      "displayName": "Demo Engineer",
+      "passwordHash": "615e8472edfb4e0009bd1ae74fbd8ceddec4f1e19217e86b6ef5cc0e20d7f7882de6d470c83e78dc2ee4140e0b960886e893a7569682939b9301f81da0ef8e86",
+      "salt": "67d78bd123cd1182984c6c0bcfa4009e",
+      "role": "user",
+      "plan": "free",
+      "dailyCreditsTotal": 15,
+      "creditsUsedToday": 0,
+      "imageCreditsTotal": 3,
+      "imageCreditsUsedToday": 0,
+      "lastResetDay": "2026-10-08",
+      "createdAt": "2026-10-08T12:34:04.197Z",
+      "updatedAt": "2026-10-08T12:34:04.197Z"
+    },
+    {
+      "id": "afe6d8ff-1e02-4b82-94d2-22abecf600d3",
+      "email": "guest@atlantis.ai",
+      "username": "guest",
+      "displayName": "Guest Explorer",
+      "passwordHash": "7f3c8ba27f05b4a19970cd9465533c1b16c8b3119919614555e994687282062f894a9163dc12d9dc37b2115c3681cdb8a6b294d4313a4d99f3e889168c0e10c1",
+      "salt": "ede32892ca178b432583f66f2709a0f0",
+      "role": "user",
+      "plan": "free",
+      "dailyCreditsTotal": 15,
+      "creditsUsedToday": 5,
+      "imageCreditsTotal": 3,
+      "imageCreditsUsedToday": 0,
+      "lastResetDay": "2026-10-08",
+      "createdAt": "2026-10-08T12:35:31.502Z",
+      "updatedAt": "2026-10-08T12:44:58.516Z"
+    }
+  ],
+  "sessions": [
+    {
+      "id": "254b221d-0b61-4441-bacc-cea0107470c2",
+      "token": "ad4dfff76779f4aaae27409d8d59ff757cd23bfbb8b31f4ba1a4874df10b3182",
+      "userId": "2808d914-6a74-4ca5-9b9d-ee752e60359e",
+      "createdAt": "2026-10-08T12:34:04.197Z",
+      "expiresAt": "2026-11-07T12:34:04.197Z"
+    },
+    {
+      "id": "32f7da1d-40c1-400f-9035-f28a3e6e749f",
+      "token": "bacf651549ab0408aaff973deafeb1097a85e8a0e61491e1152d445766957f1a",
+      "userId": "afe6d8ff-1e02-4b82-94d2-22abecf600d3",
+      "createdAt": "2026-10-08T12:35:31.503Z",
+      "expiresAt": "2026-11-07T12:35:31.503Z"
+    }
+  ],
+  "conversations": [
+    {
+      "id": "conv-8705c48f-4899-419d-88e2-76e499d83b4e",
+      "userId": "afe6d8ff-1e02-4b82-94d2-22abecf600d3",
+      "title": "مرحبا، كيف حالك؟",
+      "personaId": "atlantis-core",
+      "model": "gemini-3.8-flash",
+      "isPinned": false,
+      "createdAt": 1791463498516,
+      "updatedAt": 1791463498517
+    },
+    {
+      "id": "conv-f0299e36-2cff-4a4f-a3db-f541b4b7df55",
+      "userId": "afe6d8ff-1e02-4b82-94d2-22abecf600d3",
+      "title": "Hello, how are you?",
+      "personaId": "atlantis-core",
+      "model": "gemini-3.8-flash",
+      "isPinned": false,
+      "createdAt": 1791463495103,
+      "updatedAt": 1791463495105
+    },
+    {
+      "id": "conv-b4918ffb-a0f6-4333-9bd7-2b21832f4f87",
+      "userId": "afe6d8ff-1e02-4b82-94d2-22abecf600d3",
+      "title": "مرحبا ",
+      "personaId": "atlantis-core",
+      "model": "gemini-3.8-flash",
+      "isPinned": false,
+      "createdAt": 1791463289635,
+      "updatedAt": 1791463289635
+    },
+    {
+      "id": "conv-1bb80b41-58f7-4bcc-aca6-b9eef33d66e0",
+      "userId": "afe6d8ff-1e02-4b82-94d2-22abecf600d3",
+      "title": "Hi",
+      "personaId": "atlantis-core",
+      "model": "gemini-3.8-flash",
+      "isPinned": false,
+      "createdAt": 1791463249708,
+      "updatedAt": 1791463249708
+    },
+    {
+      "id": "conv-2af2d684-9e2a-4b9b-9e10-107de7434253",
+      "userId": "afe6d8ff-1e02-4b82-94d2-22abecf600d3",
+      "title": "Hello",
+      "personaId": "atlantis-core",
+      "model": "gemini-3.8-flash",
+      "isPinned": false,
+      "createdAt": 1791463235877,
+      "updatedAt": 1791463235877
+    },
+    {
+      "id": "conv-d409dc41-be23-4fa5-82bb-7a60bf62ca64",
+      "userId": "2808d914-6a74-4ca5-9b9d-ee752e60359e",
+      "title": "Quantum Computing Overview",
+      "personaId": "atlantis-core",
+      "model": "gemini-3.8-flash",
+      "isPinned": false,
+      "createdAt": 1791462850113,
+      "updatedAt": 1791462850113
+    }
+  ],
+  "messages": [
+    {
+      "id": "msg-52dd1baa-e38c-446b-b8cb-57901d5e1339",
+      "conversationId": "conv-2af2d684-9e2a-4b9b-9e10-107de7434253",
+      "userId": "afe6d8ff-1e02-4b82-94d2-22abecf600d3",
+      "role": "user",
+      "content": "Hello",
+      "images": [],
+      "createdAt": 1791463235877
+    },
+    {
+      "id": "msg-0b80b6cd-24f6-478b-9f77-7b4a84357b9c",
+      "conversationId": "conv-1bb80b41-58f7-4bcc-aca6-b9eef33d66e0",
+      "userId": "afe6d8ff-1e02-4b82-94d2-22abecf600d3",
+      "role": "user",
+      "content": "Hi",
+      "images": [],
+      "createdAt": 1791463249708
+    },
+    {
+      "id": "msg-c3622e2a-1ece-4518-9ccf-bb4513b3772d",
+      "conversationId": "conv-b4918ffb-a0f6-4333-9bd7-2b21832f4f87",
+      "userId": "afe6d8ff-1e02-4b82-94d2-22abecf600d3",
+      "role": "user",
+      "content": "مرحبا ",
+      "images": [],
+      "createdAt": 1791463289635
+    },
+    {
+      "id": "msg-6b8fc696-2a6b-4661-a5e9-fc8cbadfe189",
+      "conversationId": "conv-f0299e36-2cff-4a4f-a3db-f541b4b7df55",
+      "userId": "afe6d8ff-1e02-4b82-94d2-22abecf600d3",
+      "role": "user",
+      "content": "Hello, how are you?",
+      "images": [],
+      "createdAt": 1791463495103
+    },
+    {
+      "id": "msg-8c174325-b4b8-40b6-9a27-36df0856198f",
+      "conversationId": "conv-f0299e36-2cff-4a4f-a3db-f541b4b7df55",
+      "userId": "afe6d8ff-1e02-4b82-94d2-22abecf600d3",
+      "role": "assistant",
+      "content": "Welcome to Atlantis AI.\n\n⚠️ **API Key Setup Required**:\nTo enable live generative responses with Gemini models, please select and connect your API key via the **AI Studio** selection dialog or in the **Settings > Secrets** panel.\n\nOnce the key is attached, real-time streaming using `gemini-3.8-flash` will be active automatically!",
+      "isThinking": false,
+      "modelUsed": "Atlantis Flash 3.8",
+      "createdAt": 1791463495105
+    },
+    {
+      "id": "msg-9c25d474-938f-4ccb-9dc5-5b1747f057fb",
+      "conversationId": "conv-8705c48f-4899-419d-88e2-76e499d83b4e",
+      "userId": "afe6d8ff-1e02-4b82-94d2-22abecf600d3",
+      "role": "user",
+      "content": "مرحبا، كيف حالك؟",
+      "images": [],
+      "createdAt": 1791463498516
+    },
+    {
+      "id": "msg-ae404450-6805-45cf-b8ba-61f9f0956708",
+      "conversationId": "conv-8705c48f-4899-419d-88e2-76e499d83b4e",
+      "userId": "afe6d8ff-1e02-4b82-94d2-22abecf600d3",
+      "role": "assistant",
+      "content": "مرحباً بك في أتلانتس للذكاء الاصطناعي (Atlantis AI).\n\n⚠️ **تنبيه مفتاح الربط (API Key)**:\nلتمكين التوليد المباشر عبر نماذج Gemini، يرجى اختيار وتفعيل مفتاح الـ API الخاص بك من خلال نافذة **AI Studio** أو عبر قائمة **Settings > Secrets**.\n\nبمجرد اختيار المفتاح، سيتم الاتصال المباشر بنموذج `gemini-3.8-flash` وبث الإجابات في الوقت الفعلي فوراً!",
+      "isThinking": false,
+      "modelUsed": "Atlantis Flash 3.8",
+      "createdAt": 1791463498517
+    }
+  ],
+  "usageLogs": [
+    {
+      "id": "34741d1d-b316-41df-96c5-5cfdfc57183b",
+      "userId": "afe6d8ff-1e02-4b82-94d2-22abecf600d3",
+      "type": "chat",
+      "model": "gemini-3.8-flash",
+      "timestamp": 1791463235877
+    },
+    {
+      "id": "8d7a68dc-a186-4fd7-9538-8c5406af7f6a",
+      "userId": "afe6d8ff-1e02-4b82-94d2-22abecf600d3",
+      "type": "chat",
+      "model": "gemini-3.8-flash",
+      "timestamp": 1791463249708
+    },
+    {
+      "id": "15b4d54a-c063-4481-86ac-79dde87c4900",
+      "userId": "afe6d8ff-1e02-4b82-94d2-22abecf600d3",
+      "type": "chat",
+      "model": "gemini-3.8-flash",
+      "timestamp": 1791463289634
+    },
+    {
+      "id": "ce31b0cb-b304-45ab-950a-adb8f8ee7782",
+      "userId": "afe6d8ff-1e02-4b82-94d2-22abecf600d3",
+      "type": "chat",
+      "model": "gemini-3.8-flash",
+      "timestamp": 1791463495103
+    },
+    {
+      "id": "661c3ba2-3936-4d79-a280-53776ede80d5",
+      "userId": "afe6d8ff-1e02-4b82-94d2-22abecf600d3",
+      "type": "chat",
+      "model": "gemini-3.8-flash",
+      "timestamp": 1791463498516
+    }
+  ]
+}

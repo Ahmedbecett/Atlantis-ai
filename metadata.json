@@ -1,0 +1,6 @@
+{
+  "name": "Atlantis AI - Next-Gen Artificial Intelligence Platform",
+  "description": "Next-generation AI platform powered by state-of-the-art models with smart tiers, deep reasoning, live web artifacts, and vision studio.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
