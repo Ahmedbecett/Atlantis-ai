@@ -1,13 +1,13 @@
 import express from 'express';
-import dotenv from 'dotenv';
+import 'dotenv/config';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { db } from './src/server/db';
 import {
   authenticateToken,
-  optionalAuth,
   hashPassword,
   verifyPassword,
+  verifyLegacyPassword,
   AuthenticatedRequest,
 } from './src/server/auth';
 import {
@@ -16,36 +16,49 @@ import {
   getGeminiClient,
 } from './src/server/aiEngine';
 
-dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const port = 3000;
+const port = Number(process.env.PORT || 3000);
+app.disable('x-powered-by');
+app.set('trust proxy', 1);
 
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: '12mb' }));
+app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
-// Simple in-memory rate limiting middleware
+// Lightweight process-local rate limiter. It protects single-instance deployments;
+// production multi-instance deployments should additionally use Redis/edge limits.
 const requestCounts = new Map<string, { count: number; resetAt: number }>();
 app.use((req, res, next) => {
+  if (!req.path.startsWith('/api/')) return next();
   const ip = req.ip || req.socket.remoteAddress || 'unknown';
   const now = Date.now();
-  const windowMs = 60 * 1000;
-  const maxReqs = serverAiConfig.rateLimitPerMinute * 3; // allow 3x for general assets
-
-  const record = requestCounts.get(ip);
+  const windowMs = 60_000;
+  const maxReqs = Math.max(30, serverAiConfig.rateLimitPerMinute * 2);
+  const key = `${ip}:${req.method}:${req.path.split('/').slice(0, 4).join('/')}`;
+  const record = requestCounts.get(key);
   if (!record || now > record.resetAt) {
-    requestCounts.set(ip, { count: 1, resetAt: now + windowMs });
-  } else {
-    record.count++;
-    if (record.count > maxReqs && req.path.startsWith('/api/chat')) {
-      return res.status(429).json({ error: 'Too many requests. Please wait a moment.' });
-    }
+    requestCounts.set(key, { count: 1, resetAt: now + windowMs });
+    return next();
   }
+  record.count += 1;
+  if (record.count > maxReqs) return res.status(429).json({ error: 'Too many requests. Please wait a moment.' });
   next();
 });
+
+// Basic security headers without adding another runtime dependency.
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(self), geolocation=()');
+  next();
+});
+
+const isNonEmptyString = (value: unknown, max = 20000): value is string => typeof value === 'string' && value.trim().length > 0 && value.length <= max;
+const safeError = (err: any) => process.env.NODE_ENV === 'production' ? 'Request failed. Please try again.' : (err?.message || 'Request failed.');
 
 // -------------------------------------------------------------
 // System & Health Endpoints
@@ -57,7 +70,6 @@ app.get('/api/health', (req, res) => {
     version: '3.0.0-production',
     provider: serverAiConfig.provider,
     model: serverAiConfig.model,
-    hasApiKey: Boolean(process.env.GEMINI_API_KEY),
     timestamp: new Date().toISOString(),
   });
 });
@@ -87,13 +99,13 @@ app.get('/api/models', (req, res) => {
         description: 'Flagship fast polymath model for general queries, coding, and structured workflows.',
       },
       {
-        id: 'gemini-3.8-flash-deep',
+        id: 'gemini-3.8-flash',
         name: 'Atlantis Deep Ocean (Reasoner)',
-        tag: 'Extended Reasoning',
+        tag: 'Extended Reasoning • High Thinking',
         tier: 'free',
-        tokensPerMin: '800k tokens/min',
+        tokensPerMin: '1M tokens/min',
         latency: '~0.6s',
-        description: 'Multi-step deep thinking engine for complex STEM, logic, and deep software debugging.',
+        description: 'Gemini 3.8 Flash with high thinking enabled for complex reasoning.',
       },
     ],
   });
@@ -105,20 +117,22 @@ app.get('/api/models', (req, res) => {
 app.post('/api/auth/register', (req, res) => {
   try {
     const { email, username, password, displayName } = req.body;
-    if (!email || !password) {
+    if (!isNonEmptyString(email, 320) || !isNonEmptyString(password, 200)) {
       return res.status(400).json({ error: 'Email and password are required.' });
     }
 
-    const existing = db.findUserByEmail(email);
+    const normalizedEmail = email.trim().toLowerCase();
+    const requestedUsername = String(username || email.split('@')[0]).trim().slice(0, 32);
+    const existing = db.findUserByEmail(normalizedEmail) || db.findUserByUsername(requestedUsername);
     if (existing) {
       return res.status(409).json({ error: 'User with this email or username already exists.' });
     }
 
     const { hash, salt } = hashPassword(password);
     const user = db.createUser({
-      email,
-      username: username || email.split('@')[0],
-      displayName: displayName || username || email.split('@')[0],
+      email: normalizedEmail,
+      username: requestedUsername,
+      displayName: String(displayName || requestedUsername).trim().slice(0, 80),
       passwordHash: hash,
       salt,
     });
@@ -157,12 +171,18 @@ app.post('/api/auth/login', (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
-    const isValid = verifyPassword(password, user.passwordHash, user.salt);
+    let isValid = verifyPassword(password, user.passwordHash, user.salt);
+    if (!isValid) isValid = verifyLegacyPassword(password, user.passwordHash, user.salt);
     if (!isValid) {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
     const refreshed = db.checkAndRefreshUserQuota(user);
+    // Migrate legacy PBKDF2 hashes to the stronger 310k-iteration format after login.
+    if (verifyLegacyPassword(password, user.passwordHash, user.salt)) {
+      const upgraded = hashPassword(password);
+      db.updateUser(user.id, { passwordHash: upgraded.hash, salt: upgraded.salt });
+    }
     const session = db.createSession(refreshed.id);
 
     res.json({
@@ -184,7 +204,7 @@ app.post('/api/auth/login', (req, res) => {
   }
 });
 
-app.get('/api/auth/me', optionalAuth, (req: AuthenticatedRequest, res) => {
+app.get('/api/auth/me', authenticateToken, (req: AuthenticatedRequest, res) => {
   const user = req.user!;
   res.json({
     user: {
@@ -212,18 +232,18 @@ app.post('/api/auth/logout', (req, res) => {
 
 // Guest Session Endpoint
 app.post('/api/auth/guest', (req, res) => {
-  let guestUser = db.findUserByEmail('guest@atlantis.ai');
-  if (!guestUser) {
-    const { hash, salt } = hashPassword('guest1234');
-    guestUser = db.createUser({
-      email: 'guest@atlantis.ai',
-      username: 'guest',
-      displayName: 'Guest Explorer',
-      passwordHash: hash,
-      salt,
-    });
-  }
-  guestUser = db.checkAndRefreshUserQuota(guestUser);
+  // Every guest gets an isolated account/session; no shared guest data or quota.
+  const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+  const email = `guest-${suffix}@guest.atlantis.ai`;
+  const username = `guest_${suffix}`;
+  const { hash, salt } = hashPassword(crypto.randomBytes(24).toString('hex'));
+  const guestUser = db.createUser({
+    email,
+    username,
+    displayName: 'Guest Explorer',
+    passwordHash: hash,
+    salt,
+  });
   const session = db.createSession(guestUser.id);
   res.json({
     token: session.token,
@@ -242,13 +262,13 @@ app.post('/api/auth/guest', (req, res) => {
 // -------------------------------------------------------------
 // Conversations & Messages Endpoints
 // -------------------------------------------------------------
-app.get('/api/conversations', optionalAuth, (req: AuthenticatedRequest, res) => {
+app.get('/api/conversations', authenticateToken, (req: AuthenticatedRequest, res) => {
   const userId = req.user!.id;
   const conversations = db.getConversationsByUser(userId);
   res.json({ conversations });
 });
 
-app.post('/api/conversations', optionalAuth, (req: AuthenticatedRequest, res) => {
+app.post('/api/conversations', authenticateToken, (req: AuthenticatedRequest, res) => {
   const userId = req.user!.id;
   const { title, personaId, model } = req.body;
   const convo = db.createConversation({
@@ -260,21 +280,25 @@ app.post('/api/conversations', optionalAuth, (req: AuthenticatedRequest, res) =>
   res.json({ conversation: convo });
 });
 
-app.get('/api/conversations/:id', optionalAuth, (req: AuthenticatedRequest, res) => {
+app.get('/api/conversations/:id', authenticateToken, (req: AuthenticatedRequest, res) => {
   const convo = db.findConversationById(req.params.id);
-  if (!convo) {
+  if (!convo || convo.userId !== req.user!.id) {
     return res.status(404).json({ error: 'Conversation not found.' });
   }
   const messages = db.getMessagesByConversation(convo.id);
   res.json({ conversation: convo, messages });
 });
 
-app.delete('/api/conversations/:id', optionalAuth, (req: AuthenticatedRequest, res) => {
+app.delete('/api/conversations/:id', authenticateToken, (req: AuthenticatedRequest, res) => {
+  const convo = db.findConversationById(req.params.id);
+  if (!convo || convo.userId !== req.user!.id) return res.status(404).json({ error: 'Conversation not found.' });
   db.deleteConversation(req.params.id);
   res.json({ message: 'Conversation deleted.' });
 });
 
-app.patch('/api/conversations/:id', optionalAuth, (req: AuthenticatedRequest, res) => {
+app.patch('/api/conversations/:id', authenticateToken, (req: AuthenticatedRequest, res) => {
+  const convo = db.findConversationById(req.params.id);
+  if (!convo || convo.userId !== req.user!.id) return res.status(404).json({ error: 'Conversation not found.' });
   const { title, isPinned } = req.body;
   const updated = db.updateConversation(req.params.id, {
     ...(title !== undefined ? { title } : {}),
@@ -288,15 +312,12 @@ app.patch('/api/conversations/:id', optionalAuth, (req: AuthenticatedRequest, re
 // -------------------------------------------------------------
 
 // Streaming Chat (SSE)
-app.post('/api/chat/stream', optionalAuth, async (req: AuthenticatedRequest, res) => {
+app.post('/api/chat/stream', authenticateToken, async (req: AuthenticatedRequest, res) => {
   const user = req.user!;
   db.checkAndRefreshUserQuota(user);
 
-  // Check quota
   if (user.creditsUsedToday >= user.dailyCreditsTotal) {
-    return res.status(403).json({
-      error: 'Daily credit quota exceeded. Please upgrade to Atlantis Pro for higher limits.',
-    });
+    return res.status(403).json({ error: 'Daily credit quota exceeded. Please upgrade to Atlantis Pro for higher limits.' });
   }
 
   try {
@@ -314,18 +335,18 @@ app.post('/api/chat/stream', optionalAuth, async (req: AuthenticatedRequest, res
       return res.status(400).json({ error: 'Prompt or message content is required.' });
     }
 
-    // Deduct 1 credit
-    db.updateUser(user.id, { creditsUsedToday: user.creditsUsedToday + 1 });
-    db.logUsage(user.id, 'chat', isDeepThinking ? 'gemini-3.8-flash-deep' : 'gemini-3.8-flash');
+    // Consume the credit only after request validation.
+    if (!db.consumeChatCredit(user.id)) return res.status(403).json({ error: 'Daily credit quota exceeded.' });
+    db.logUsage(user.id, 'chat', 'gemini-3.8-flash');
 
     // Ensure conversation exists in DB
     let conversationId = incomingConvId;
-    if (!conversationId || !db.findConversationById(conversationId)) {
+    if (!conversationId || !db.findConversationById(conversationId) || db.findConversationById(conversationId)!.userId !== user.id) {
       const title = prompt.slice(0, 40) || 'New Conversation';
       const newConvo = db.createConversation({
         userId: user.id,
         title,
-        model: isDeepThinking ? 'gemini-3.8-flash-deep' : 'gemini-3.8-flash',
+        model: 'gemini-3.8-flash',
       });
       conversationId = newConvo.id;
     }
@@ -374,18 +395,20 @@ app.post('/api/chat/stream', optionalAuth, async (req: AuthenticatedRequest, res
         role: 'assistant',
         content: fullGeneratedResponse,
         isThinking: isDeepThinking,
-        modelUsed: isDeepThinking ? 'Atlantis Deep Ocean' : 'Atlantis Flash 3.8',
+        modelUsed: isDeepThinking ? 'Atlantis Deep Ocean (Gemini 3.8 Flash • High Thinking)' : 'Atlantis Flash 3.8',
       });
     }
 
     res.write('data: [DONE]\n\n');
     res.end();
   } catch (err: any) {
+    const latest = db.findUserById(user.id);
+    if (latest && latest.creditsUsedToday > 0) db.updateUser(user.id, { creditsUsedToday: latest.creditsUsedToday - 1 });
     console.error('Error in /api/chat/stream:', err);
     if (!res.headersSent) {
-      res.status(500).json({ error: err.message || 'AI engine failed to generate response.' });
+      res.status(500).json({ error: safeError(err) });
     } else {
-      res.write(`data: ${JSON.stringify({ error: err.message || 'Streaming error' })}\n\n`);
+      res.write(`data: ${JSON.stringify({ error: safeError(err) })}\n\n`);
       res.write('data: [DONE]\n\n');
       res.end();
     }
@@ -393,7 +416,7 @@ app.post('/api/chat/stream', optionalAuth, async (req: AuthenticatedRequest, res
 });
 
 // Non-streaming Unary Chat (for Mobile Android app & REST clients)
-app.post('/api/chat', optionalAuth, async (req: AuthenticatedRequest, res) => {
+app.post('/api/chat', authenticateToken, async (req: AuthenticatedRequest, res) => {
   const user = req.user!;
   db.checkAndRefreshUserQuota(user);
 
@@ -418,12 +441,12 @@ app.post('/api/chat', optionalAuth, async (req: AuthenticatedRequest, res) => {
       return res.status(400).json({ error: 'Prompt is required.' });
     }
 
-    // Deduct 1 credit
-    db.updateUser(user.id, { creditsUsedToday: user.creditsUsedToday + 1 });
-    db.logUsage(user.id, 'chat', isDeepThinking ? 'gemini-3.8-flash-deep' : 'gemini-3.8-flash');
+    // Consume the credit only after request validation.
+    if (!db.consumeChatCredit(user.id)) return res.status(403).json({ error: 'Daily credit quota exceeded.' });
+    db.logUsage(user.id, 'chat', 'gemini-3.8-flash');
 
     let conversationId = incomingConvId;
-    if (!conversationId || !db.findConversationById(conversationId)) {
+    if (!conversationId || !db.findConversationById(conversationId) || db.findConversationById(conversationId)!.userId !== user.id) {
       const newConvo = db.createConversation({
         userId: user.id,
         title: prompt.slice(0, 40) || 'New Conversation',
@@ -456,7 +479,7 @@ app.post('/api/chat', optionalAuth, async (req: AuthenticatedRequest, res) => {
       role: 'assistant',
       content: result.text,
       isThinking: isDeepThinking,
-      modelUsed: isDeepThinking ? 'Atlantis Deep Ocean' : 'Atlantis Flash 3.8',
+      modelUsed: isDeepThinking ? 'Atlantis Deep Ocean (Gemini 3.8 Flash • High Thinking)' : 'Atlantis Flash 3.8',
     });
 
     res.json({
@@ -466,13 +489,15 @@ app.post('/api/chat', optionalAuth, async (req: AuthenticatedRequest, res) => {
       creditsLeft: Math.max(0, user.dailyCreditsTotal - user.creditsUsedToday),
     });
   } catch (err: any) {
+    const latest = db.findUserById(user.id);
+    if (latest && latest.creditsUsedToday > 0) db.updateUser(user.id, { creditsUsedToday: latest.creditsUsedToday - 1 });
     console.error('Error in /api/chat:', err);
-    res.status(500).json({ error: err.message || 'AI request failed.' });
+    res.status(500).json({ error: safeError(err) });
   }
 });
 
 // Image Generation Endpoint
-app.post('/api/generate-image', optionalAuth, async (req: AuthenticatedRequest, res) => {
+app.post('/api/generate-image', authenticateToken, async (req: AuthenticatedRequest, res) => {
   const user = req.user!;
   db.checkAndRefreshUserQuota(user);
 
@@ -488,14 +513,14 @@ app.post('/api/generate-image', optionalAuth, async (req: AuthenticatedRequest, 
       return res.status(400).json({ error: 'Image description prompt is required.' });
     }
 
-    db.updateUser(user.id, { imageCreditsUsedToday: user.imageCreditsUsedToday + 1 });
-    db.logUsage(user.id, 'image', 'gemini-3.1-flash-lite-image');
+    if (!db.consumeImageCredit(user.id)) return res.status(403).json({ error: 'Daily image generation limit reached.' });
+    db.logUsage(user.id, 'image', 'gemini-3.1-flash-image');
 
     try {
       const client = getGeminiClient();
       if (client) {
         const response = await client.models.generateContent({
-          model: 'gemini-3.1-flash-lite-image',
+          model: 'gemini-3.1-flash-image',
           contents: prompt,
           config: {
             imageConfig: {
@@ -513,58 +538,26 @@ app.post('/api/generate-image', optionalAuth, async (req: AuthenticatedRequest, 
         }
       }
     } catch (modelErr: any) {
-      console.warn('Image model call deferred to synthetic artwork:', modelErr.message);
+      console.warn('Image model call failed:', modelErr.message);
     }
 
-    // Creative SVG Artwork generator for Atlantis AI
-    const width = aspectRatio === '16:9' ? 960 : aspectRatio === '9:16' ? 540 : 800;
-    const height = aspectRatio === '16:9' ? 540 : aspectRatio === '9:16' ? 960 : 800;
-    const cleanPrompt = prompt.replace(/[<>&"]/g, '');
-
-    const svgArtwork = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
-  <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#020617"/>
-      <stop offset="40%" stop-color="#071b38"/>
-      <stop offset="80%" stop-color="#0c2d48"/>
-      <stop offset="100%" stop-color="#001428"/>
-    </linearGradient>
-    <radialGradient id="oceanGlow" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#00f2fe" stop-opacity="0.35"/>
-      <stop offset="70%" stop-color="#4facfe" stop-opacity="0.08"/>
-      <stop offset="100%" stop-color="#000" stop-opacity="0"/>
-    </radialGradient>
-    <linearGradient id="crystalGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#38bdf8"/>
-      <stop offset="50%" stop-color="#0284c7"/>
-      <stop offset="100%" stop-color="#0369a1"/>
-    </linearGradient>
-  </defs>
-  <rect width="100%" height="100%" fill="url(#bg)"/>
-  <circle cx="${width / 2}" cy="${height / 2}" r="${Math.min(width, height) * 0.4}" fill="url(#oceanGlow)"/>
-  <polygon points="${width / 2},${height * 0.22} ${width * 0.8},${height * 0.75} ${width * 0.2},${height * 0.75}" fill="url(#crystalGrad)" opacity="0.85"/>
-  <polygon points="${width / 2},${height * 0.22} ${width / 2},${height * 0.75} ${width * 0.2},${height * 0.75}" fill="#0ea5e9" opacity="0.6"/>
-  <line x1="${width / 2}" y1="${height * 0.22}" x2="${width / 2}" y2="${height * 0.75}" stroke="#7dd3fc" stroke-width="2"/>
-  <circle cx="${width / 2}" cy="${height * 0.5}" r="${Math.min(width, height) * 0.22}" fill="none" stroke="#38bdf8" stroke-width="1.5" stroke-dasharray="6,6" opacity="0.6"/>
-  <text x="${width / 2}" y="${height * 0.2}" font-family="sans-serif" font-size="32" font-weight="bold" fill="#38bdf8" text-anchor="middle" filter="drop-shadow(0 0 10px #00f2fe)">Ψ</text>
-  <rect x="${width * 0.08}" y="${height * 0.82}" width="${width * 0.84}" height="${height * 0.12}" rx="12" fill="#040b18" fill-opacity="0.85" stroke="#0369a1" stroke-width="1"/>
-  <text x="${width * 0.12}" y="${height * 0.87}" font-family="sans-serif" font-size="14" font-weight="bold" fill="#38bdf8">ATLANTIS AI VISION STUDIO</text>
-  <text x="${width * 0.12}" y="${height * 0.91}" font-family="sans-serif" font-size="12" fill="#94a3b8">${cleanPrompt.slice(0, 75)}...</text>
-</svg>`;
-
-    const base64Svg = Buffer.from(svgArtwork).toString('base64');
-    res.json({ imageUrl: `data:image/svg+xml;base64,${base64Svg}`, prompt });
+    const latest = db.findUserById(user.id);
+    if (latest && latest.imageCreditsUsedToday > 0) db.updateUser(user.id, { imageCreditsUsedToday: latest.imageCreditsUsedToday - 1 });
+    return res.status(503).json({ error: 'Image generation is temporarily unavailable. Please verify the Gemini image model/API access.' });
   } catch (err: any) {
+    // Refund the image credit when the provider call itself fails.
+    const latest = db.findUserById(user.id);
+    if (latest && latest.imageCreditsUsedToday > 0) db.updateUser(user.id, { imageCreditsUsedToday: latest.imageCreditsUsedToday - 1 });
     console.error('Error generating image:', err);
-    res.status(500).json({ error: err.message || 'Image generation failed.' });
+    res.status(500).json({ error: safeError(err) });
   }
 });
 
 // Text to Speech Endpoint
-app.post('/api/tts', async (req, res) => {
+app.post('/api/tts', authenticateToken, async (req, res) => {
   try {
-    const { text, voice = 'Kore' } = req.body;
-    if (!text) {
+    const { text, voice = 'Kore' } = req.body || {};
+    if (!isNonEmptyString(text, 4000)) {
       return res.status(400).json({ error: 'Text content is required for speech synthesis.' });
     }
 
@@ -596,32 +589,33 @@ app.post('/api/tts', async (req, res) => {
     }
   } catch (err: any) {
     console.error('Error in TTS generation:', err);
-    res.status(500).json({ error: err.message || 'TTS generation failed.' });
+    res.status(500).json({ error: safeError(err) });
   }
 });
 
 // Plan Upgrade / Quota management
-app.post('/api/user/plan', optionalAuth, (req: AuthenticatedRequest, res) => {
+app.post('/api/user/plan', authenticateToken, (req: AuthenticatedRequest, res) => {
   const user = req.user!;
-  const { plan } = req.body;
-  if (!['free', 'pro', 'enterprise'].includes(plan)) {
-    return res.status(400).json({ error: 'Invalid plan.' });
+  const { plan } = req.body || {};
+  if (!['free', 'pro', 'enterprise'].includes(plan)) return res.status(400).json({ error: 'Invalid plan.' });
+
+  // Paid entitlements must never be granted from a client-controlled request.
+  // A payment provider webhook/admin action should update these fields server-side.
+  if (plan !== 'free' && user.role !== 'admin' && process.env.ALLOW_DEMO_PLAN_UPGRADE !== 'true') {
+    return res.status(402).json({ error: 'Paid plans require a verified subscription. Configure billing/webhooks before enabling upgrades.' });
   }
 
   const credits = plan === 'enterprise' ? 99999 : plan === 'pro' ? 1000 : 15;
   const imageCredits = plan === 'enterprise' ? 1000 : plan === 'pro' ? 100 : 3;
-
-  const updated = db.updateUser(user.id, {
-    plan,
-    dailyCreditsTotal: credits,
-    imageCreditsTotal: imageCredits,
-  });
-
+  const updated = db.updateUser(user.id, { plan, dailyCreditsTotal: credits, imageCreditsTotal: imageCredits });
   res.json({ user: updated });
 });
 
-app.post('/api/user/reset-quota', optionalAuth, (req: AuthenticatedRequest, res) => {
+app.post('/api/user/reset-quota', authenticateToken, (req: AuthenticatedRequest, res) => {
   const user = req.user!;
+  if (user.role !== 'admin' && process.env.ALLOW_SELF_QUOTA_RESET !== 'true') {
+    return res.status(403).json({ error: 'Quota reset is not available to this account.' });
+  }
   const updated = db.updateUser(user.id, {
     creditsUsedToday: 0,
     imageCreditsUsedToday: 0,
@@ -647,6 +641,12 @@ if (process.env.NODE_ENV !== 'production') {
   });
 }
 
-app.listen(port, '0.0.0.0', () => {
-  console.log(`Atlantis AI Production Server listening on http://0.0.0.0:${port}`);
-});
+export default app;
+
+// Vercel/serverless imports this module without opening a listening socket.
+// The standalone Node server still listens normally.
+if (process.env.VERCEL !== '1' && process.env.SERVERLESS !== 'true') {
+  app.listen(port, '0.0.0.0', () => {
+    console.log(`Atlantis AI server listening on http://0.0.0.0:${port}`);
+  });
+}

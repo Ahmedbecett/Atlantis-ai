@@ -1,0 +1,6 @@
+app/
+backend/
+*.zip
+AUDIT_PLAN.md
+BUILD_CHECKLIST.md
+IMPLEMENTATION_GUIDE.md
