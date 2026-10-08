@@ -23,20 +23,17 @@ fun resolveGitCommit(): String = try {
 }
 
 android {
-  namespace = "com.example"
+  namespace = "com.atlantis.ai"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {
-    applicationId = "com.aistudio.tokpulse.social"
+    applicationId = "com.atlantis.ai"
     minSdk = 24
     targetSdk = 36
 
     // ------------------------------------------------------------------
-    // ZEVORA 3.1.0 — TikTok-style create flow, drawer, settings overhaul (was 3.0.0 / 30000).
-    // Full rebuild from the ZEVORA source: production cleanup merged in,
-    // mock screens/data removed, identity rebranded to ZEVORA, stable
-    // production signing. Bump BOTH on every release so a stale APK can
-    // never be mistaken for the current build on-device.
+    // ATLANTIS AI Android build — production application identity and build metadata.
+    // // Atlantis AI Android release build. Keep versionCode/versionName in sync with releases.
     // ------------------------------------------------------------------
     versionCode = 32003
     versionName = "3.2.3"
@@ -60,7 +57,7 @@ android {
         enableV1Signing = true
         enableV2Signing = true
         enableV3Signing = true
-        logger.lifecycle("[ZEVORA] Release signing keystore configured from environment")
+        logger.lifecycle("[Atlantis AI] Release signing keystore configured from environment")
       }
     }
   }
