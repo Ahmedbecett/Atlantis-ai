@@ -134,7 +134,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AtlantisApp() {
     val context = LocalContext.current
-    val repository = ZevoraApplication.instance.repository
+    val repository = AtlantisApplication.instance.repository
     val currentUser by repository.currentUser.collectAsState()
     val unreadNotifications by repository.getUnreadCount(currentUser?.id ?: "user_me").collectAsState(initial = 0)
 
