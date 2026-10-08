@@ -12,7 +12,7 @@ import com.example.util.AppPrefs
 import com.example.util.CrashHandler
 import com.google.firebase.FirebaseApp
 
-class AtlantisApplication : Application(), ImageLoaderFactory {
+lateinit var instance: ZevoraApplication : Application(), ImageLoaderFactory {
 
     lateinit var repository: ZevoraRepository
         private set
