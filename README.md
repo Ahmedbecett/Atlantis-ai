@@ -23,6 +23,12 @@
 - **Deployment:** Vercel
 - **Styling:** Tailwind CSS
 
+## 📱 Android APK
+
+[**⬇️ تحميل Atlantis AI APK**](https://github.com/Ahmedbecett/Atlantis-ai/actions/runs/37799811116/artifacts/11560915150)
+
+> آخر إصدار Debug ناجح. افتح الرابط واضغط على `Atlantis-AI-debug-apk` لتنزيل حزمة التطبيق.
+
 ## 🚀 Run locally
 
 1. Install dependencies:
