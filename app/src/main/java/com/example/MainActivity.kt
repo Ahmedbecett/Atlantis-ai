@@ -116,7 +116,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             ZevoraTheme {
-                ZevoraApp()
+                AtlantisApp()
             }
         }
     }
@@ -132,7 +132,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun ZevoraApp() {
+fun AtlantisApp() {
     val context = LocalContext.current
     val repository = ZevoraApplication.instance.repository
     val currentUser by repository.currentUser.collectAsState()
@@ -150,7 +150,7 @@ fun ZevoraApp() {
     pendingCrash?.let { report ->
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { },
-            title = { Text("Rivo stopped last time") },
+            title = { Text("Atlantis AI stopped last time") },
             text = {
                 Text(
                     text = report.take(4000),
@@ -162,7 +162,7 @@ fun ZevoraApp() {
                 androidx.compose.material3.TextButton(onClick = {
                     try {
                         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                        cm.setPrimaryClip(android.content.ClipData.newPlainText("Rivo crash", report))
+                        cm.setPrimaryClip(android.content.ClipData.newPlainText("Atlantis AI crash", report))
                         android.widget.Toast.makeText(context, "Copied", android.widget.Toast.LENGTH_SHORT).show()
                     } catch (_: Exception) {
                     }
